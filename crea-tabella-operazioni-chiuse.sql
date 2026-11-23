@@ -1,20 +1,20 @@
--- Tabella bot11.bot11_operazioni_chiuse del Bot 11: un record per ogni operazione chiusa,
+-- Tabella bot15.bot15_operazioni_chiuse del Bot 15: un record per ogni operazione chiusa,
 -- con gli stessi campi del blocco "OPERAZIONE CHIUSA" che veniva scritto in Logs/Operazioni_chiuse.log.
--- Non modifica la tabella se esiste gia. Alla fine copia da bot11.bot11_trades le operazioni
+-- Non modifica la tabella se esiste gia. Alla fine copia da bot15.bot15_trades le operazioni
 -- gia chiuse che mancano (una riga per trade, senza duplicati).
 IF DB_ID(N'bot') IS NULL
     CREATE DATABASE [bot];
 GO
 USE [bot];
 GO
-IF SCHEMA_ID(N'bot11') IS NULL
-    EXEC(N'CREATE SCHEMA [bot11]');
+IF SCHEMA_ID(N'bot15') IS NULL
+    EXEC(N'CREATE SCHEMA [bot15]');
 GO
-IF OBJECT_ID(N'bot11.bot11_operazioni_chiuse', N'U') IS NULL
+IF OBJECT_ID(N'bot15.bot15_operazioni_chiuse', N'U') IS NULL
 BEGIN
-    CREATE TABLE [bot11].[bot11_operazioni_chiuse] (
+    CREATE TABLE [bot15].[bot15_operazioni_chiuse] (
         [Id]               bigint IDENTITY(1,1) NOT NULL,
-        [TradeId]          nvarchar(36)    NOT NULL, -- "ID" = bot11.bot11_trades.Id
+        [TradeId]          nvarchar(36)    NOT NULL, -- "ID" = bot15.bot15_trades.Id
         [Symbol]           nvarchar(50)    NULL,     -- "Simbolo"
         [Isin]             nvarchar(12)    NULL,     -- codice ISIN (EODHD)
         [Strategy]         nvarchar(200)   NULL,     -- "Strategia"
@@ -29,27 +29,27 @@ BEGIN
         [Status]           nvarchar(20)    NULL,     -- "Stato"
         [OpenTime]         datetime2       NOT NULL, -- "Apertura" (UTC)
         [CloseTime]        datetime2       NOT NULL, -- "Chiusura" (UTC)
-        [Bot]              nvarchar(50)    NOT NULL CONSTRAINT [DF_bot11_operazioni_chiuse_Bot] DEFAULT (N'Bot 11'), -- bot che ha scritto la riga
-        CONSTRAINT [PK_bot11_operazioni_chiuse] PRIMARY KEY ([Id])
+        [Bot]              nvarchar(50)    NOT NULL CONSTRAINT [DF_bot15_operazioni_chiuse_Bot] DEFAULT (N'Bot 15'), -- bot che ha scritto la riga
+        CONSTRAINT [PK_bot15_operazioni_chiuse] PRIMARY KEY ([Id])
     );
-    CREATE UNIQUE INDEX [UX_bot11_operazioni_chiuse_TradeId] ON [bot11].[bot11_operazioni_chiuse] ([TradeId]);
-    CREATE INDEX [IX_bot11_operazioni_chiuse_CloseTime] ON [bot11].[bot11_operazioni_chiuse] ([CloseTime]);
-    PRINT 'Tabella bot11.bot11_operazioni_chiuse creata';
+    CREATE UNIQUE INDEX [UX_bot15_operazioni_chiuse_TradeId] ON [bot15].[bot15_operazioni_chiuse] ([TradeId]);
+    CREATE INDEX [IX_bot15_operazioni_chiuse_CloseTime] ON [bot15].[bot15_operazioni_chiuse] ([CloseTime]);
+    PRINT 'Tabella bot15.bot15_operazioni_chiuse creata';
 END
 ELSE
-    PRINT 'Tabella bot11.bot11_operazioni_chiuse gia esistente: nessuna modifica';
+    PRINT 'Tabella bot15.bot15_operazioni_chiuse gia esistente: nessuna modifica';
 GO
-IF OBJECT_ID(N'bot11.bot11_trades', N'U') IS NOT NULL
+IF OBJECT_ID(N'bot15.bot15_trades', N'U') IS NOT NULL
 BEGIN
-    INSERT INTO [bot11].[bot11_operazioni_chiuse]
+    INSERT INTO [bot15].[bot15_operazioni_chiuse]
         ([TradeId], [Symbol], [Strategy], [IsLong], [StopLoss], [TargetPrice], [ExitReason], [EntryPrice],
          [ExitPrice], [Profit], [ProfitPercentage], [Status], [OpenTime], [CloseTime])
     SELECT t.[Id], t.[Symbol], t.[Strategy], t.[IsLong], t.[StopLoss], t.[TargetPrice], t.[ExitReason], t.[EntryPrice],
            t.[ExitPrice], t.[Profit], t.[ProfitPercentage], t.[Status], t.[OpenTime], t.[CloseTime]
-    FROM [bot11].[bot11_trades] t
+    FROM [bot15].[bot15_trades] t
     WHERE t.[Status] = N'Closed' AND t.[CloseTime] IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM [bot11].[bot11_operazioni_chiuse] c WHERE c.[TradeId] = t.[Id])
+      AND NOT EXISTS (SELECT 1 FROM [bot15].[bot15_operazioni_chiuse] c WHERE c.[TradeId] = t.[Id])
     ORDER BY t.[CloseTime];
-    PRINT 'Operazioni chiuse copiate da bot11.bot11_trades: ' + CAST(@@ROWCOUNT AS nvarchar(20));
+    PRINT 'Operazioni chiuse copiate da bot15.bot15_trades: ' + CAST(@@ROWCOUNT AS nvarchar(20));
 END
 GO

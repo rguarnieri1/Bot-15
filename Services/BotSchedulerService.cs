@@ -351,7 +351,7 @@ public class BotSchedulerService
         }
         finally
         {
-            // Salva il ciclo nella tabella bot11.bot11_cycles (anche se terminato con errore)
+            // Salva il ciclo nella tabella bot15.bot15_cycles (anche se terminato con errore)
             if (cycle != null)
             {
                 cycle.EndTime = DateTime.UtcNow;
