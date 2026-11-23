@@ -1,4 +1,4 @@
-using BotCripto.Models;
+﻿using BotCripto.Models;
 using BotCripto.Strategies;
 
 namespace BotCripto.Services;
@@ -7,12 +7,12 @@ public class BotSchedulerService
 {
     private const int CandlesPerAnalysis = 300;  // stessa finestra del backtest
     private const int HistoryCalendarDays = 450;  // giorni di calendario che coprono 300 sedute di borsa
-    private const int MinCandlesForAnalysis = 60; // minimo richiesto dalla strategia
+    private const int MinCandlesForAnalysis = RelativeStrengthBreakoutStrategy.MinCandles; // minimo richiesto dalla strategia
 
     private readonly YahooDataService _dataService;
     private readonly NotificationService _notificationService;
     private readonly ReportingService _reportingService;
-    private readonly EmaRibbonTrendFollowingStrategy _emaRibbonStrategy;
+    private readonly RelativeStrengthBreakoutStrategy _strategy;
     private readonly RiskManager _riskManager;
     private Timer? _marketCheckTimer;
     private Timer? _weeklyReportTimer;
@@ -39,7 +39,7 @@ public class BotSchedulerService
         _dataService = new YahooDataService();
         _notificationService = new NotificationService();
         _reportingService = new ReportingService();
-        _emaRibbonStrategy = new EmaRibbonTrendFollowingStrategy();
+        _strategy = new RelativeStrengthBreakoutStrategy();
         _riskManager = new RiskManager(
             positionValue: capitalPerTrade,   // importo fisso per trade ($)
             rewardRiskRatio: rewardRiskRatio, // take profit = R:R × distanza dello stop
@@ -169,11 +169,11 @@ public class BotSchedulerService
             }
             else
             {
-                // Regime di mercato (SPY sopra/sotto la EMA50) sulla seduta appena chiusa: filtro direzionale della strategia
-                var marketBullish = EmaRibbonTrendFollowingStrategy.IsMarketBullish(marketClosed);
+                // Regime di mercato (SPY sopra la EMA200 in salita) sulla seduta appena chiusa: filtro direzionale della strategia
+                var marketBullish = RelativeStrengthBreakoutStrategy.IsMarketBullish(marketClosed);
                 Console.WriteLine($"🕯️  Seduta del {lastClosedTime:yyyy-MM-dd} chiusa: ricerca segnali");
-                Console.WriteLine($"📊 Regime di mercato ({YahooDataService.MarketSymbol}): {(marketBullish == null ? "sconosciuto (nessun segnale)" : marketBullish.Value ? "rialzista (solo long)" : "ribassista (solo short)")}");
-                cycle.BtcRegime = marketBullish == null ? "Sconosciuto" : marketBullish.Value ? "Rialzista" : "Ribassista";
+                Console.WriteLine($"📊 Regime di mercato ({YahooDataService.MarketSymbol}): {(marketBullish == null ? "neutro/sconosciuto (nessun segnale)" : marketBullish.Value ? "rialzista (SPY sopra EMA200 in salita: solo long)" : "ribassista (SPY sotto EMA200 in discesa: solo short)")}");
+                cycle.BtcRegime = marketBullish == null ? "Neutro" :marketBullish.Value ? "Rialzista" : "Ribassista";
 
                 _lastScannedCandle = lastClosedTime;
                 var stocks = _dataService.Universe;
@@ -215,13 +215,13 @@ public class BotSchedulerService
                             continue;
                         }
 
-                        // ✅ STRATEGIA PRINCIPALE: EMA Ribbon Trend Following + Candle Confirmation
-                        var emaRibbonResult = _emaRibbonStrategy.Analyze(symbol, candles, marketBullish);
+                        // ✅ STRATEGIA: Breakout su forza relativa (benchmark SPY)
+                        var analysisResult = _strategy.Analyze(symbol, candles, marketClosed);
 
-                        if (emaRibbonResult.IsSignal)
-                            candidates.Add((symbol, emaRibbonResult, candles));
+                        if (analysisResult.IsSignal)
+                            candidates.Add((symbol, analysisResult, candles));
                         else
-                            CountRejection(RejectionLabel(emaRibbonResult.Rejection));
+                            CountRejection(RejectionLabel(analysisResult.Rejection));
 
                     }
                     catch (Exception ex)
@@ -234,9 +234,9 @@ public class BotSchedulerService
                 await IsinService.PrefetchAsync(candidates.Select(c => c.symbol));
 
                 // Dal segnale più forte al più debole (capitale illimitato: entrano tutti i segnali validi)
-                foreach (var (symbol, emaRibbonResult, candles) in candidates.OrderByDescending(c => c.analysis.Indicators.GetValueOrDefault("SignalStrength")))
+                foreach (var (symbol, analysisResult, candles) in candidates.OrderByDescending(c => c.analysis.Indicators.GetValueOrDefault("SignalStrength")))
                 {
-                    var isLong = emaRibbonResult.Signal.Contains("BUY");
+                    var isLong = analysisResult.Signal.Contains("BUY");
                     // Ingresso alla chiusura della candela del segnale (come nel backtest), non al prezzo live:
                     // lo stop della strategia è calcolato su quella candela e i controlli stop/target partono dalla successiva.
                     var entryPrice = candles.Last().Close;
@@ -245,10 +245,10 @@ public class BotSchedulerService
                         entryPrice,
                         CalculateVolatility(candles),
                         isLong,
-                        emaRibbonResult.Indicators.GetValueOrDefault("StopLoss")
+                        analysisResult.Indicators.GetValueOrDefault("StopLoss")
                     );
 
-                    var signalRecord = SignalRecord.FromAnalysis(emaRibbonResult, _timeframe, lastClosedTime!.Value, entryPrice, isLong);
+                    var signalRecord = SignalRecord.FromAnalysis(analysisResult, _timeframe, lastClosedTime!.Value, entryPrice, isLong);
 
                     if (!positionResult.IsValid)
                     {
@@ -260,17 +260,17 @@ public class BotSchedulerService
                         continue;
                     }
 
-                    emaRibbonResult.Indicators["StopLoss"] = positionResult.StopLossPrice;
-                    emaRibbonResult.Indicators["Target"] = positionResult.TargetPrice;
-                    emaRibbonResult.Indicators["PositionSize"] = positionResult.PositionSize;
-                    emaRibbonResult.Indicators["RiskRewardRatio"] = positionResult.RiskRewardRatio;
-                    emaRibbonResult.Indicators["ExpectedProfit"] = positionResult.ExpectedProfit;
+                    analysisResult.Indicators["StopLoss"] = positionResult.StopLossPrice;
+                    analysisResult.Indicators["Target"] = positionResult.TargetPrice;
+                    analysisResult.Indicators["PositionSize"] = positionResult.PositionSize;
+                    analysisResult.Indicators["RiskRewardRatio"] = positionResult.RiskRewardRatio;
+                    analysisResult.Indicators["ExpectedProfit"] = positionResult.ExpectedProfit;
 
-                    await _notificationService.SendNotificationAsync(emaRibbonResult);
+                    await _notificationService.SendNotificationAsync(analysisResult);
                     var trade = _reportingService.RecordTrade(
                         symbol,
                         entryPrice,
-                        "EMA Ribbon Trend Following (Primary)",
+                        RelativeStrengthBreakoutStrategy.Name,
                         isLong,
                         positionResult.StopLossPrice,
                         positionResult.TargetPrice,
@@ -422,13 +422,13 @@ public class BotSchedulerService
     private static string RejectionLabel(RejectionReason reason) => reason switch
     {
         RejectionReason.InsufficientData => "Strategia: dati insufficienti per il calcolo",
-        RejectionReason.TrendNotAligned => "Strategia: trend non allineato (EMA5/10/20/30)",
+        RejectionReason.TrendNotAligned => "Strategia: trend non allineato al regime SPY",
         RejectionReason.NoVolumeData => "Strategia: volume assente",
         RejectionReason.VolumeInsufficient => "Strategia: volume insufficiente",
         RejectionReason.CandleNotStrong => "Strategia: candela non abbastanza forte",
-        RejectionReason.PriceVsEma10 => "Strategia: prezzo non conferma vs EMA10",
+        RejectionReason.PriceVsEma10 => "Strategia: forza relativa non confermata vs SPY",
         RejectionReason.RsiExtreme => "Strategia: RSI estremo",
-        RejectionReason.NoBreakout => "Strategia: nessun breakout EMA confermato",
+        RejectionReason.NoBreakout => "Strategia: nessun breakout confermato",
         RejectionReason.AgainstMarketRegime => "Strategia: contro il regime di mercato (SPY)",
         RejectionReason.MaxConcurrentTrades => "Risk Manager: troppi trade aperti simultaneamente",
         RejectionReason.ProfitBelowCommissions => "Risk Manager: profitto non copre commissioni",

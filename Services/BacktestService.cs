@@ -1,4 +1,4 @@
-using BotCripto.Models;
+﻿using BotCripto.Models;
 using BotCripto.Strategies;
 using System.Text;
 
@@ -29,13 +29,13 @@ public class BacktestService
 
     private readonly YahooDataService _dataService;
     private readonly RiskManager _riskManager;
-    private readonly EmaRibbonTrendFollowingStrategy _strategy;
+    private readonly RelativeStrengthBreakoutStrategy _strategy;
 
     // Capitale investibile illimitato: ogni trade investe un importo fisso (capitalPerTrade), senza tetto totale
     public BacktestService(decimal rewardRiskRatio, decimal capitalPerTrade)
     {
         _dataService = new YahooDataService();
-        _strategy = new EmaRibbonTrendFollowingStrategy();
+        _strategy = new RelativeStrengthBreakoutStrategy();
         _riskManager = new RiskManager(
             positionValue: capitalPerTrade,
             rewardRiskRatio: rewardRiskRatio,
@@ -47,7 +47,7 @@ public class BacktestService
     // Imposta sulle plusvalenze: si applica al saldo netto del periodo (le perdite compensano i guadagni)
     private const decimal TaxRate = 0.26m;
 
-    // Esegue davvero la strategia EMA Ribbon + RiskManager candela per candela su dati storici reali
+    // Esegue davvero la strategia Breakout Forza Relativa + RiskManager candela per candela su dati storici reali
     // (candele giornaliere Yahoo Finance), aprendo e chiudendo posizioni quando stop loss o target vengono toccati.
     // requestedSymbols: elenco fisso di azioni; se null si usano le più grandi per capitalizzazione
     // (attenzione: è l'elenco di oggi applicato al passato, quindi il risultato è ottimistico).
@@ -62,7 +62,7 @@ public class BacktestService
         Console.WriteLine($"⏱️  Timeframe: {timeframe}");
 
         // Riscaldamento: almeno WarmupCandles + 60 candele del timeframe (1d → 120 giorni), minimo 20 giorni
-        var warmup = TimeSpan.FromTicks(Math.Max(TimeSpan.FromDays(MinWarmupDays).Ticks, TimeframeToTimeSpan(timeframe).Ticks * (WarmupCandles + 60)));
+        var warmup = TimeSpan.FromTicks(Math.Max(TimeSpan.FromDays(MinWarmupDays).Ticks, TimeframeToTimeSpan(timeframe).Ticks * (WarmupCandles + 300)));
         var historyFrom = startDate - warmup;
 
         await _dataService.LoadAsync(historyFrom, endDate, requestedSymbols);
@@ -90,9 +90,8 @@ public class BacktestService
 
         // Regime di mercato (SPY) per ogni candela: calcolato solo sulle candele disponibili fino a quel momento
         var marketCandles = _dataService.GetHistoricalCandles(YahooDataService.MarketSymbol, historyFrom, endDate);
-        var marketRegime = new Dictionary<DateTime, bool?>();
-        for (int i = 0; i < marketCandles.Count; i++)
-            marketRegime[marketCandles[i].Time] = EmaRibbonTrendFollowingStrategy.IsMarketBullish(Window(marketCandles, i));
+        marketCandles = marketCandles.OrderBy(c => c.Time).ToList();
+        var marketIndex = marketCandles.Select((c, i) => (c.Time, i)).ToDictionary(x => x.Time, x => x.i);
 
         // 1) Scarica tutte le candele prima di simulare: il portafoglio va simulato in ordine cronologico
         //    su tutti i simboli insieme, per sapere in ogni momento quanto capitale è impegnato.
@@ -176,7 +175,10 @@ public class BacktestService
                     if (openPositions.ContainsKey(symbol) || !indexBySymbol[symbol].TryGetValue(time, out var idx) || idx < WarmupCandles)
                         continue;
 
-                    var analysis = _strategy.Analyze(symbol, Window(candles, idx), marketRegime.GetValueOrDefault(time));
+                    if (!marketIndex.TryGetValue(time, out var mIdx))
+                        continue;
+
+                    var analysis = _strategy.Analyze(symbol, Window(candles, idx), Window(marketCandles, mIdx));
                     if (analysis.IsSignal)
                         candidates.Add((symbol, candles[idx], analysis));
                 }

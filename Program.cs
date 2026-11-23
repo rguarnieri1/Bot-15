@@ -1,4 +1,4 @@
-using BotCripto.Data;
+﻿using BotCripto.Data;
 using BotCripto.Services;
 using Newtonsoft.Json.Linq;
 
@@ -108,9 +108,9 @@ async Task RunLiveAsync()
     var scheduler = new BotSchedulerService(Timeframe, RewardRiskRatio, CapitalPerTrade);
 
     Console.WriteLine("Strategia Principale Attiva:");
-    Console.WriteLine("  ⭐ EMA Ribbon Trend Following + Candle Confirmation");
-    Console.WriteLine($"     • Configurazione: EMA 5, 10, 20, 30 su candele {Timeframe}");
-    Console.WriteLine("     • Filtri: Volume, Candle Body, RSI, Breakout Confirmation, Regime di mercato (SPY vs EMA50)");
+    Console.WriteLine("  ⭐ Breakout su Forza Relativa (benchmark SPY)");
+    Console.WriteLine($"     • Configurazione: breakout 20 candele, EMA20/EMA50, linea RS vs SPY su candele {Timeframe}");
+    Console.WriteLine("     • Filtri: Forza Relativa a nuovi massimi, Volume 1,5x, RSI, Regime di mercato SPY vs EMA200 (long se rialzista, short se ribassista)");
     Console.WriteLine("     • Modalità: paper trading (segnali e trade simulati, nessun ordine reale)");
     Console.WriteLine("\nImpostazioni:");
     Console.WriteLine("  • Dati: Yahoo Finance (YFSharp), azioni USA più grandi per capitalizzazione (candele giornaliere)");
