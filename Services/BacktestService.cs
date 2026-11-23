@@ -273,7 +273,7 @@ public class BacktestService
         var sb = new StringBuilder();
 
         sb.AppendLine("\n" + new string('═', 80));
-        sb.AppendLine("📊 BACKTEST REPORT - BOT 11 AZIONI USA (dati storici reali Yahoo Finance)");
+        sb.AppendLine("📊 BACKTEST REPORT - BOT 15 AZIONI USA (dati storici reali Yahoo Finance)");
         sb.AppendLine(new string('═', 80));
 
         sb.AppendLine($"\n📅 PERIODO TEST:");
