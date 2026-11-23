@@ -242,14 +242,10 @@ public class BacktestService
             maxDrawdownAmount = Math.Max(maxDrawdownAmount, peakPnl - markedPnl);
         }
 
-        // Una posizione ancora aperta a fine periodo viene chiusa al prezzo dell'ultima candela
-        // testata (mark-to-market), altrimenti le perdite/guadagni non realizzati sparirebbero dalle metriche.
-        foreach (var symbol in openPositions.Keys.ToList())
-        {
-            var lastCandle = candlesBySymbol[symbol].Last(c => c.Time <= endDate);
-            ClosePosition(symbol, lastCandle.Close, lastCandle.Time, false);
-            closedAtEnd++;
-        }
+        // Le posizioni ancora aperte a fine periodo (stop e target non toccati) NON entrano nel P&L né nelle metriche:
+        // il profitto è calcolato solo sui trade chiusi da stop loss o take profit.
+        closedAtEnd = openPositions.Count;
+        backtestResult.OpenAtEnd = openPositions.Count;
 
         backtestResult.Metrics = _riskManager.CalculatePerformanceMetrics(backtestResult.Trades);
 
@@ -263,7 +259,7 @@ public class BacktestService
         backtestResult.TotalCapitalInvested = backtestResult.Trades.Sum(t => t.EntryPrice * t.PositionSize);
         backtestResult.MaxDrawdownAmount = maxDrawdownAmount;
 
-        Console.WriteLine($"\n✅ BACKTEST COMPLETATO ({backtestResult.Trades.Count} trade chiusi da {candleSetsAnalyzed} simboli con dati sufficienti, di cui {closedAtEnd} chiusi a fine periodo al prezzo di mercato)");
+        Console.WriteLine($"\n✅ BACKTEST COMPLETATO ({backtestResult.Trades.Count} trade chiusi da {candleSetsAnalyzed} simboli con dati sufficienti, escluse {closedAtEnd} posizioni ancora aperte a fine periodo)");
 
         return backtestResult;
     }
@@ -301,7 +297,8 @@ public class BacktestService
         sb.AppendLine($"\n💼 ACCOUNT METRICS:");
         sb.AppendLine($"   • Capitale investibile: illimitato");
         sb.AppendLine($"   • Capitale massimo impegnato contemporaneamente: ${result.MaxCapitalCommitted:F2}");
-        sb.AppendLine($"   • Totale investito (somma dei trade): ${result.TotalCapitalInvested:F2}");
+        sb.AppendLine($"   • Totale investito (somma dei trade chiusi): ${result.TotalCapitalInvested:F2}");
+        sb.AppendLine($"   • Posizioni ancora aperte a fine periodo (escluse dal P&L): {result.OpenAtEnd}");
         sb.AppendLine($"   • P&L al netto delle commissioni (prima delle tasse): ${pnlBeforeTax:F2}");
         sb.AppendLine($"   • Tasse ({TaxRate:P0} sul saldo netto positivo del periodo): ${-taxes:F2}");
         sb.AppendLine($"   • P&L netto totale: ${netPnl:F2}");
@@ -401,6 +398,7 @@ public class BacktestResult
     public int TotalSignalsFiltered { get; set; }
     public int MaxConcurrentPositions { get; set; }
     public decimal MaxCapitalCommitted { get; set; }
+    public int OpenAtEnd { get; set; } // posizioni ancora aperte a fine periodo, escluse dal P&L
     public decimal TotalCapitalInvested { get; set; }
     public decimal MaxDrawdownAmount { get; set; }
     public List<Trade> Trades { get; set; } = new();

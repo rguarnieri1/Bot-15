@@ -41,6 +41,8 @@ public class RelativeStrengthBreakoutStrategy
     private const int RegimeEma = 200;           // SPY vs la sua EMA (servono >= RegimeEma + 6 candele di SPY)
     private const decimal MinClosePosition = 0.8m; // la chiusura deve stare nel 20% estremo del range della candela
     public const int MinCandles = SlowEma + 20;
+    // true: long solo con SPY rialzista e short solo con SPY ribassista; false: long sempre attivi, short solo con SPY ribassista
+    private const bool UseMarketRegime = false;
 
     // Regime di mercato: true = SPY sopra EMA200 in salita, false = SPY sotto EMA200 in discesa,
     // null = neutro (es. SPY sopra la EMA ma EMA in discesa) o dati insufficienti.
@@ -94,13 +96,20 @@ public class RelativeStrengthBreakoutStrategy
         result.Indicators["RSI"] = rsiNow;
 
         // 0) Regime di mercato: decide la direzione
-        var regime = IsMarketBullish(benchmark);
-        if (regime == null)
+        // Con UseMarketRegime = false long e short sono valutati entrambi ogni giorno: il lato è quello del trend del titolo
+        // (sopra/sotto la EMA50) e il regime di SPY non blocca nessuno dei due.
+        bool isLong = last.Close >= e50;
+        // Gli short richiedono SPY ribassista (sotto la EMA200 in discesa); i long sono sempre ammessi.
+        // Con UseMarketRegime = true il filtro vale anche per i long (SPY rialzista).
+        if (UseMarketRegime || !isLong)
         {
-            result.Rejection = RejectionReason.AgainstMarketRegime;
-            return result;
+            var regime = IsMarketBullish(benchmark);
+            if (regime == null || regime.Value != isLong)
+            {
+                result.Rejection = RejectionReason.AgainstMarketRegime;
+                return result;
+            }
         }
-        bool isLong = regime.Value;
 
         // 1) Trend di fondo nella direzione del regime
         bool trendOk = isLong
